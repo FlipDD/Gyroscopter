@@ -1,107 +1,74 @@
 ﻿using System.Collections;
 using UnityEngine;
-using TMPro;
 
 public class GyroscopeCamera : MonoBehaviour
 {
-    // STATE
-    private float initialPitch = 0f;
-    private float appliedGyroPitch = 0f;
-    private float calibrationPitch = 0f;
-    private float initialYaw = 0f;
-    private float appliedGyroYaw = 0f;
-    private float calibrationYaw = 0f;
-    private Transform rawGyroRotation;
-    private float tempSmoothing;
+    [SerializeField] float maxPitch = -40f;
+    [SerializeField] float smoothing = 0.1f;
+    [SerializeField] GameObject resetViewPanel;
 
-    private Quaternion currentOffset = Quaternion.identity;
+    Transform rawGyroRotation;
+    Quaternion newAngle, currentAngle, currentOffset;
+    float initialPitch, appliedGyroPitch, calibrationPitch;
+    float initialYaw, appliedGyroYaw, calibrationYaw;
 
-    // SETTINGS
-    [SerializeField] private float maxPitch = 0f; 
-    [SerializeField] private float smoothing = 0.1f;
-    [SerializeField] private GameObject resetViewPanel;
-    [SerializeField] private TMP_Text debugText;
-    [SerializeField] private TMP_Text debugText2;
+    private void Awake() => Input.gyro.enabled = true;
 
-    Quaternion offset;
     private IEnumerator Start()
     {
-        Input.gyro.enabled = true;
-        Application.targetFrameRate = 60;
+        initialPitch = transform.eulerAngles.x;
         initialYaw = transform.eulerAngles.y;
 
         rawGyroRotation = new GameObject("GyroRaw").transform;
         rawGyroRotation.position = transform.position;
         rawGyroRotation.rotation = transform.rotation;
 
-        // Calibrate to reset starting rotation when gyro is active.
-        yield return new WaitForSeconds(2);
+        // Wait until gyro is active, then calibrate to reset starting rotation.
+        yield return new WaitForSeconds(1);
 
-        StartCoroutine(CalibrateYawAndPitch());
+        StartCoroutine(CalibrateAngle());
     }
 
     private void Update()
     {
         ApplyGyroRotation();
-        ApplyCalibration();
+        StartCoroutine(ApplyCalibration());
 
-        transform.rotation =  Quaternion.Slerp(transform.rotation, rawGyroRotation.rotation, smoothing);
-        var clampedPitch = Utility.ClampAngle(transform.rotation.eulerAngles.x, -maxPitch, maxPitch); 
-        var clampedYaw = Utility.ClampAngle(transform.rotation.eulerAngles.y, -180, 180); 
-        transform.rotation = Quaternion.Euler(
-            clampedPitch, transform.rotation.eulerAngles.y, 0);
+        // Stop moving towards center if x and y are within a certain range of center
+        newAngle = rawGyroRotation.rotation * Quaternion.Inverse(currentOffset);
+        transform.rotation = Quaternion.Slerp(transform.rotation, newAngle, smoothing);
 
-
-        //debugText.SetText("Rotation: " + Utility.ClampAngle(transform.rotation.eulerAngles.x, -maxPitch, maxPitch));
+        // Clamp pitch and assign to rotation with roll as 0 (no need for roll rotation)
+        var clampedPitch = Utility.ClampAngle(transform.rotation.eulerAngles.x, -maxPitch, maxPitch);
+        transform.rotation = Quaternion.Euler(clampedPitch, transform.rotation.eulerAngles.y, 0f);
     }
 
-    private IEnumerator CalibrateYawAndPitch()
+    public IEnumerator CalibrateAngle()
     {
-        tempSmoothing = smoothing;
-        smoothing = 1;
-        calibrationPitch = appliedGyroPitch - initialPitch; // Offsets pitch in case it wasn't 0 at edit time.
-        calibrationYaw = appliedGyroYaw - initialYaw; // Offsets yaw in case it wasn't 0 at edit time.
+        // Offsets the angle in case it wasn't 0 at edit time.
+        calibrationPitch = appliedGyroPitch - initialPitch;
+        calibrationYaw = appliedGyroYaw - initialYaw;
         yield return null;
-        smoothing = tempSmoothing;
+        currentOffset = rawGyroRotation.rotation;
+        currentAngle = transform.rotation;
     }
 
     private void ApplyGyroRotation()
     {
-        rawGyroRotation.rotation = Input.gyro.attitude;
-        rawGyroRotation.Rotate(0f, 0f, 180f, Space.Self); // Swap "handedness" of quaternion from gyro.
-        rawGyroRotation.Rotate(90f, 180f, 0f, Space.World); // Rotate to make sense as a camera pointing out the back of your device.
+        rawGyroRotation.rotation =
+            new Quaternion(.5f, .5f, -.5f, .5f) * Input.gyro.attitude * new Quaternion(0, 0, 1, 0);
 
-        appliedGyroPitch = rawGyroRotation.eulerAngles.x; // Save pitch for use in calibration.
-        appliedGyroYaw = rawGyroRotation.eulerAngles.y; // Save yaw for use in calibration.
+        // Save the angle around axis for use in calibration.
+        appliedGyroPitch = rawGyroRotation.eulerAngles.x;
+        appliedGyroYaw = rawGyroRotation.eulerAngles.y;
     }
 
-    private void ApplyCalibration()
+    // Avoid gymbal lock
+    private IEnumerator ApplyCalibration()
     {
-        offset = transform.rotation * Quaternion.Inverse(GyroToUnity(Input.gyro.attitude));
-        // var yawRot = Quaternion.AngleAxis(-calibrationYaw, Vector3.up);
-        // rawGyroRotation.rotation *= yawRot;
-        // var pitchRot = Quaternion.AngleAxis(-calibrationPitch, Vector3.right);
-        // rawGyroRotation.rotation *= pitchRot;
-        
-        
-        //StartCoroutine(Calibrate());
-
-    }
-
-    private static Quaternion GyroToUnity(Quaternion q)
-    {
-        return new Quaternion(q.x, q.y, -q.z, -q.w);
-    }
-
-    IEnumerator Calibrate()
-    {
-        calibrationPitch = Utility.ClampAngle(calibrationPitch, -maxPitch, maxPitch);
-        rawGyroRotation.Rotate(calibrationPitch, -calibrationYaw, 0f, Space.World); // Rotates y angle back however much it deviated when calibrationYaw was saved.
-        debugText.SetText("yaw: " + calibrationYaw);
-        debugText2.SetText("pitch: " + calibrationPitch);
+        rawGyroRotation.Rotate(0, -calibrationYaw, 0, Space.World);
         yield return null;
-        //rawGyroRotation.Rotate(0, -calibrationYaw, 0f, Space.World); // Rotates y angle back however much it deviated when calibrationYaw was saved.
-
+        rawGyroRotation.Rotate(calibrationPitch, 0, 0, Space.World);
     }
 
     // "Recalibrate" button on click method
@@ -109,32 +76,17 @@ public class GyroscopeCamera : MonoBehaviour
     {
         if (resetViewPanel.activeSelf) {
             resetViewPanel.SetActive(false);
-            StartCoroutine(CalibrateYawAndPitch());
+            StartCoroutine(CalibrateAngle());
         }
         else {
             resetViewPanel.SetActive(true);
         }
     }
 
+    // Recalibrate when the app in reopened
     private void OnApplicationFocus(bool focusStatus)
     {
         if (focusStatus)
-        {
-            StartCoroutine(CalibrateYawAndPitch());
-            debugText.SetText("focused");
-        }
-        else
-        {
-            StartCoroutine(CalibrateYawAndPitch());
-            debugText.SetText("not focused");
-        }
-    }
-
-    public void OnApplicationPause(bool paused) {
-        if(paused) {
-            debugText.SetText("pause");
-        } else {
-            debugText.SetText("not paused");
-        }
+            StartCoroutine(CalibrateAngle());
     }
 }
