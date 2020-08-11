@@ -1,11 +1,12 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class GyroscopeCamera : MonoBehaviour
 {
     [SerializeField] GameObject resetViewPanel;
     [SerializeField] float smoothing = 0.1f;
+    [SerializeField] float maxPitch = 40;
     Quaternion origin = Quaternion.identity;
 	
 
@@ -24,7 +25,7 @@ public class GyroscopeCamera : MonoBehaviour
 	void Update() 
     {
 		transform.localRotation = Quaternion.Slerp(transform.rotation, GyroToUnity(Quaternion.Inverse(origin) * Input.gyro.attitude), smoothing);
-        transform.rotation = Quaternion.Euler(Utility.ClampAngle(transform.rotation.eulerAngles.x, -40, 40), transform.rotation.eulerAngles.y, 0);
+        transform.localRotation = Quaternion.Euler(Utility.ClampAngle(transform.rotation.eulerAngles.x, -maxPitch, maxPitch), transform.rotation.eulerAngles.y, 0);
 	}
 
     private void Calibrate()
@@ -52,6 +53,12 @@ public class GyroscopeCamera : MonoBehaviour
     void OnApplicationPause(bool pauseStatus)
     {
         if (!pauseStatus)
-            Calibrate();
+            StartCoroutine(WaitToCalibrate());
+    }
+
+    IEnumerator WaitToCalibrate()
+    {
+        yield return new WaitForSeconds(.5f);
+        Calibrate();
     }
 }

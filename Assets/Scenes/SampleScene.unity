@@ -534,9 +534,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c805f1af63f43014b9ac391a1c732f55, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxPitch: 35
-  smoothing: 0.1
   resetViewPanel: {fileID: 1946572767}
+  smoothing: 0.1
+  maxPitch: 40
 --- !u!1 &1009095088
 GameObject:
   m_ObjectHideFlags: 0
